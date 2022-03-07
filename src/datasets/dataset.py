@@ -25,7 +25,7 @@ class BasicDataset(Dataset):
                  transform=None,
                  is_ulb=False,
                  strong_transform=None,
-                 onehot=False,
+                 onehot=False, name='',
                  *args, **kwargs):
         """
         Args
@@ -45,6 +45,7 @@ class BasicDataset(Dataset):
         self.num_classes = num_classes
         self.is_ulb = is_ulb
         self.onehot = onehot
+        self.name= name 
 
         self.transform = transform
         if self.is_ulb:
@@ -70,14 +71,19 @@ class BasicDataset(Dataset):
             target = target_ if not self.onehot else get_onehot(self.num_classes, target_)
 
         # set augmented images
-
         img = self.data[idx]
         if self.transform is None:
+            if self.name == 'CHEST':
+                return img, target 
             return transforms.ToTensor()(img), target
         else:
             if isinstance(img, np.ndarray):
                 img = Image.fromarray(img)
-            img_w = self.transform(img)
+            if self.name == 'CHEST':
+                img_w = img
+
+            else:
+                img_w = self.transform(img)
             if not self.is_ulb:
                 return idx, img_w, target
             else:
@@ -105,6 +111,7 @@ class BasicDataset(Dataset):
                     img_s2 = self.strong_transform(img)
                     return idx, img_w, img_s1, img_s2, img_s1_rot, rotate_v_list.index(rotate_v1)
                 elif self.alg == 'fullysupervised':
+                    print('Inside full supervised: ', idx)
                     return idx
 
     def __len__(self):

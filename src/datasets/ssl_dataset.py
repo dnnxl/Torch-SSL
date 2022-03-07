@@ -28,14 +28,17 @@ mean['cifar100'] = [x / 255 for x in [129.3, 124.1, 112.4]]
 mean['svhn'] = [0.4380, 0.4440, 0.4730]
 mean['stl10'] = [x / 255 for x in [112.4, 109.1, 98.6]]
 mean['imagenet'] = [0.485, 0.456, 0.406]
-mean['chest'] = [0.4824, 0.4824, 0.4824]
+mean['chest'] = [0.5129, 0.5129, 0.5129]
+# mean['chest'] = [0.4824, 0.4824, 0.4824]
+
 
 std['cifar10'] = [x / 255 for x in [63.0, 62.1, 66.7]]
 std['cifar100'] = [x / 255 for x in [68.2, 65.4, 70.4]]
 std['svhn'] = [0.1751, 0.1771, 0.1744]
 std['stl10'] = [x / 255 for x in [68.4, 66.6, 68.5]]
 std['imagenet'] = [0.229, 0.224, 0.225]
-std['chest'] = [0.2355, 0.2355, 0.2355]
+std['chest'] = [0.2471, 0.2471, 0.2471]
+# std['chest'] = [0.2355, 0.2355, 0.2355]
 
 
 def accimage_loader(path):
@@ -183,11 +186,12 @@ def get_transform(mean, std, crop_size, train=True):
     if train:
         return transforms.Compose([transforms.RandomHorizontalFlip(),
                                    transforms.RandomCrop(crop_size, padding=4, padding_mode='reflect'),
-                                   transforms.ToTensor(),
-                                   transforms.Normalize(mean, std)])
+                                   #transforms.ToTensor(),
+                                   transforms.Normalize(mean, std),
+                                  ])
     else:
-        return transforms.Compose([transforms.ToTensor(),
-                                   transforms.Normalize(mean, std)])
+        return transforms.Compose([#transforms.ToTensor(),
+                                   transforms.Normalize(mean, std), ])
 
 
 class SSL_Dataset:
@@ -227,11 +231,42 @@ class SSL_Dataset:
         shape of data: B, H, W, C
         shape of labels: B,
         """
+        # chest x-rays dataset
+        if 'CHEST' in self.name.upper():
+            if self.train: 
+                # Transformations
+                trans = torchvision.transforms.Compose([
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Resize((110,110)),
+                    torchvision.transforms.Normalize(mean['chest'], std['chest']),
+
+                ])
+                # Load the training dataset folder
+                train_data = torchvision.datasets.ImageFolder(root=self.data_dir, transform=trans)
+                train_data_loader = DataLoader(train_data, shuffle=True,  num_workers=4, batch_size=train_data.__len__())
+
+                data, targets = next(iter(train_data_loader))[0], next(iter(train_data_loader))[1]
+                return data, targets
+            elif self.train == False:
+                trans = torchvision.transforms.Compose([
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Resize((110,110)),
+                    torchvision.transforms.Normalize(mean['chest'], std['chest']),
+                ])
+                # Load the training dataset folder
+                val_data = torchvision.datasets.ImageFolder(root=self.data_dir.replace("train", "test"), transform=trans)
+                val_data_loader = DataLoader(val_data, shuffle=True,  num_workers=4, batch_size=val_data.__len__())
+
+                data, targets = next(iter(val_data_loader))[0], next(iter(val_data_loader))[1]
+                return data, targets
+        # chest x-rays dataset
+        
         dset = getattr(torchvision.datasets, self.name.upper())
         if 'CIFAR' in self.name.upper():
             dset = dset(self.data_dir, train=self.train, download=True)
             data, targets = dset.data, dset.targets
             return data, targets
+
         elif self.name.upper() == 'SVHN':
             if self.train:
                 if svhn_extra:  # train+extra
@@ -259,7 +294,7 @@ class SSL_Dataset:
             return data, targets, ulb_data
 
     def get_dset(self, is_ulb=False,
-                 strong_transform=None, onehot=False):
+                 strong_transform=None, onehot=False, name=''):
         """
         get_dset returns class BasicDataset, containing the returns of get_data.
         
@@ -277,10 +312,10 @@ class SSL_Dataset:
         transform = self.transform
 
         return BasicDataset(self.alg, data, targets, num_classes, transform,
-                            is_ulb, strong_transform, onehot)
+                            is_ulb, strong_transform, onehot, name)
 
     def get_ssl_dset(self, num_labels, index=None, include_lb_to_ulb=True,
-                     strong_transform=None, onehot=False):
+                     strong_transform=None, onehot=False, name=''):
         """
         get_ssl_dset split training samples into labeled and unlabeled samples.
         The labeled data is balanced samples over classes.
@@ -299,8 +334,9 @@ class SSL_Dataset:
         if self.alg == 'fullysupervised':
             lb_data, lb_targets = self.get_data()
             lb_dset = BasicDataset(self.alg, lb_data, lb_targets, self.num_classes,
-                                   self.transform, False, None, onehot)
-            return lb_dset, None
+                                   self.transform, False, None, onehot, name=name)
+            
+            return lb_dset, None          
 
         if self.name.upper() == 'STL10':
             lb_data, lb_targets, ulb_data = self.get_data()
@@ -313,6 +349,8 @@ class SSL_Dataset:
             lb_data, lb_targets, ulb_data, ulb_targets = split_ssl_data(self.args, data, targets,
                                                                         num_labels, self.num_classes,
                                                                         index, include_lb_to_ulb)
+
+            
         # output the distribution of labeled data for remixmatch
         count = [0 for _ in range(self.num_classes)]
         for c in lb_targets:
@@ -329,10 +367,10 @@ class SSL_Dataset:
             json.dump(out, w)
         # print(Counter(ulb_targets.tolist()))
         lb_dset = BasicDataset(self.alg, lb_data, lb_targets, self.num_classes,
-                               self.transform, False, None, onehot)
+                               self.transform, False, None, onehot, name=name)
 
         ulb_dset = BasicDataset(self.alg, ulb_data, ulb_targets, self.num_classes,
-                                self.transform, True, strong_transform, onehot)
-        # print(lb_data.shape)
-        # print(ulb_data.shape)
+                                self.transform, True, strong_transform, onehot, name=name)
+        #print('Shape', lb_data.shape)
+        #print('Shape:', ulb_data.shape)
         return lb_dset, ulb_dset

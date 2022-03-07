@@ -141,14 +141,16 @@ def main_worker(gpu, ngpus_per_node, args):
     # Construct Dataset & DataLoader
     train_dset = SSL_Dataset(args, alg='fullysupervised', name=args.dataset, train=True,
                              num_classes=args.num_classes, data_dir=args.data_dir)
-    lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
+    lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels, name='CHEST')
 
     _eval_dset = SSL_Dataset(args, alg='fullysupervised', name=args.dataset, train=False,
                              num_classes=args.num_classes, data_dir=args.data_dir)
-    eval_dset = _eval_dset.get_dset()
+    eval_dset = _eval_dset.get_dset(name='CHEST')
     if args.rank == 0 and args.distributed:
         torch.distributed.barrier()
     
+    print('Label dataset: ', lb_dset)
+    print('Eval dataset: ', eval_dset)
 
     loader_dict = {}
     dset_dict = {'train_lb': lb_dset, 'eval': eval_dset}
@@ -165,6 +167,9 @@ def main_worker(gpu, ngpus_per_node, args):
                                           args.eval_batch_size,
                                           num_workers=args.num_workers,
                                           drop_last=False)
+
+    print('Train dataloader: ', next(iter(loader_dict['train_lb']))[0].numpy().shape )
+    print('Eval dataloader: ', next(iter(loader_dict['eval']))[0].numpy().shape )
 
     ## set DataLoader
     model.set_data_loader(loader_dict)
@@ -294,3 +299,5 @@ if __name__ == "__main__":
 #python supervised.py --c config/supervised/supervised.yaml
 
 #python mixmatch.py --c config/mixmatch/mixmatch.yaml
+
+#python supervised.py --c config/supervised/supervised-covid.yaml
